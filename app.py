@@ -3,6 +3,7 @@ import uuid
 import base64
 import subprocess
 import tempfile
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -54,6 +55,43 @@ def convert():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/telegram', methods=['POST'])
+def telegram():
+    try:
+        data = request.get_json()
+        if not data or not data.get('token') or not data.get('chat_id'):
+            return jsonify({'ok': False, 'error': 'Faltan token o chat_id'}), 400
+
+        token   = data['token']
+        chat_id = data['chat_id']
+        text    = data.get('text', '')
+        pdf_b64 = data.get('pdf_b64')
+        filename = data.get('filename', 'informe.pdf')
+
+        # 1) Enviar mensaje de texto
+        requests.post(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            json={'chat_id': chat_id, 'text': text},
+            timeout=10
+        )
+
+        # 2) Enviar PDF si viene
+        if pdf_b64 and filename:
+            pdf_bytes = base64.b64decode(pdf_b64)
+            files = {'document': (filename, pdf_bytes, 'application/pdf')}
+            requests.post(
+                f'https://api.telegram.org/bot{token}/sendDocument',
+                data={'chat_id': chat_id, 'caption': text[:200]},
+                files=files,
+                timeout=30
+            )
+
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
